@@ -95,3 +95,15 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_trace(void){
+  int mask;
+  
+  //读取trapframe 获取mask参数
+  if(argint(0,&mask) < 0){ 
+    return -1;
+  }
+  myproc()->trace_mask = mask;
+  return 0;
+}
