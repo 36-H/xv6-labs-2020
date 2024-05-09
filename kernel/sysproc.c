@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -94,4 +95,41 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_trace(void){
+  int mask;
+  
+  //读取trapframe 获取mask参数
+  if(argint(0,&mask) < 0){ 
+    return -1;
+  }
+  myproc()->trace_mask = mask;
+  return 0;
+}
+
+//为什么不能传参呢，因为这涉及到用户态和内核态的切换，那么从用户态过来的参数，
+//我们应该从a0寄存器取出
+//也就是 argraw(int n) 当n=0时会取出a0寄存器的值
+uint64
+sys_sysinfo(void){
+  //读入用户态参数
+  uint64 addr;
+
+  if(argaddr(0,&addr) < 0){
+    return -1;
+  }
+
+  struct sysinfo info;
+  info.freemem = count_free_mem();
+  info.nproc = count_nproc();
+
+  //使用 copyout，通过当前进程的页表，获得进程传进来的指针（逻辑地址）对应的物理地址
+  //然后将 &info 中的数据复制到该指针所指位置
+  if(copyout(myproc()->pagetable, addr, (char *)&info, sizeof(info)) < 0){
+    return -1;
+  }
+
+  return 0;
 }

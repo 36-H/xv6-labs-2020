@@ -127,6 +127,9 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  //set default value to trace mask
+  p->trace_mask = 0;
+
   return p;
 }
 
@@ -150,6 +153,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->trace_mask = 0; //free mask
 }
 
 // Create a user page table for a given process,
@@ -294,6 +298,9 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+
+  //copy the parent's trace_mask to child
+  np->trace_mask = p->trace_mask;
 
   release(&np->lock);
 
@@ -692,4 +699,17 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+
+uint64
+count_nproc(void){
+  uint64 count= 0;
+  for(struct proc *p = proc; p < &proc[NPROC]; p++) {
+    // 判断进程块状态
+    if(p->state != UNUSED) { 
+        count++;
+    }
+  }
+  return count;
 }
