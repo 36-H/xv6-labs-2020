@@ -700,3 +700,16 @@ procdump(void)
     printf("\n");
   }
 }
+
+
+uint64
+count_nproc(void){
+  uint64 count= 0;
+  for(struct proc *p = proc; p < &proc[NPROC]; p++) {
+    // 判断进程块状态
+    if(p->state != UNUSED) { 
+        count++;
+    }
+  }
+  return count;
+}
