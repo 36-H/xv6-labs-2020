@@ -480,6 +480,11 @@ pgtbl_print(pagetable_t pagetable,int depth){
       //判断是否为叶子节点
       //判断页表项是否为叶子节点的方法是检查 R、W、X 位是否至少有一个被设置为1。
       //如果这些位之一被设置，这意味着这个页表项直接映射到物理页而不是指向另一级页表。
+      //PTE2PA(pte) (((pte) >> 10) << 12)
+      //右移10位 去除了控制位
+      //左移12位 就能拿到页号
+      //这时候根据偏移量就能拿到物理地址~
+      //https://img.36h.top/i/2024/05/18/6648b9f46ef02.png
       if(!(pte & (PTE_R | PTE_W | PTE_X))){
         uint64 child = PTE2PA(pte);
         pgtbl_print((pagetable_t)child, depth + 1);
