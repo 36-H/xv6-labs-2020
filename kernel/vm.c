@@ -21,6 +21,7 @@ extern char trampoline[]; // trampoline.S
 void
 kvminit()
 {
+  // 分配并初始化内核页表
   kernel_pagetable = (pagetable_t) kalloc();
   memset(kernel_pagetable, 0, PGSIZE);
 
@@ -49,6 +50,7 @@ kvminit()
 
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
+// 将硬件页表寄存器切换到内核的页表，并启用分页
 void
 kvminithart()
 {
@@ -59,7 +61,7 @@ kvminithart()
 // Return the address of the PTE in page table pagetable
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page-table pages.
-//
+// 返回对应于给定虚拟地址的页表项的地址。如果alloc非零，则会创建所需的页表页。
 // The risc-v Sv39 scheme has three levels of page-table
 // pages. A page-table page contains 512 64-bit PTEs.
 // A 64-bit virtual address is split into five fields:
@@ -68,6 +70,10 @@ kvminithart()
 //   21..29 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
+// 采用三级页表的形式，9 bit 一级索引找到二级页表，
+// 9 bit 二级索引找到三级页表，
+// 9 bit 三级索引找到内存页，
+// 最低 12 bit 为页内偏移（即一个页 4096 bytes）。
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
@@ -145,6 +151,7 @@ kvmpa(uint64 va)
 // physical addresses starting at pa. va and size might not
 // be page-aligned. Returns 0 on success, -1 if walk() couldn't
 // allocate a needed page-table page.
+// 从va开始的虚拟地址创建指向从pa开始的物理地址的页表项。成功返回0，失败返回-1。
 int
 mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 {
@@ -170,6 +177,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
+// 移除从虚拟地址va开始的npages页的映射。如果do_free非零，会释放关联的物理内存。
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -305,6 +313,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
+// 将父进程的内存复制到子进程的页表中，包括页表项和物理内存。成功返回0，失败返回-1。
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
@@ -439,4 +448,49 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+
+
+// The risc-v Sv39 scheme has three levels of page-table
+// pages. A page-table page contains 512 64-bit PTEs.
+// A 64-bit virtual address is split into five fields:
+//   39..63 -- must be zero.
+//   30..38 -- 9 bits of level-2 index.
+//   21..29 -- 9 bits of level-1 index.
+//   12..20 -- 9 bits of level-0 index.
+//    0..11 -- 12 bits of byte offset within the page.
+// 采用三级页表的形式，9 bit 一级索引找到二级页表，
+// 9 bit 二级索引找到三级页表，
+// 9 bit 三级索引找到内存页，
+// 最低 12 bit 为页内偏移（即一个页 4096 bytes）。
+// 根据上述打印页表
+int
+pgtbl_print(pagetable_t pagetable,int depth){
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    //该页表项有效
+    if(pte & PTE_V){
+      printf("..");
+      for(int j = 0; j < depth; j++){
+        printf(" ..");
+      }
+      printf("%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+      //判断是否为叶子节点
+      //判断页表项是否为叶子节点的方法是检查 R、W、X 位是否至少有一个被设置为1。
+      //如果这些位之一被设置，这意味着这个页表项直接映射到物理页而不是指向另一级页表。
+      if(!(pte & (PTE_R | PTE_W | PTE_X))){
+        uint64 child = PTE2PA(pte);
+        pgtbl_print((pagetable_t)child, depth + 1);
+      }
+    }
+  }
+  return 0;
+}
+
+int
+vmprint(pagetable_t pagetable){
+  printf("page table %p\n",pagetable);
+  return pgtbl_print(pagetable,0);
 }
