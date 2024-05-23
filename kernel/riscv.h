@@ -311,6 +311,17 @@ r_ra()
   return x;
 }
 
+// 获取当前执行函数的帧指针 fp指向的是当前栈帧的开始地址也就是高位地址
+// fp - 8 是 return Address 当前调用层应该返回到的地址
+// fp -16 是 previous address 指向上一层栈帧的 fp 开始地址
+static inline uint64
+r_fp()
+{
+  uint64 x;
+  asm volatile("mv %0, s0" : "=r" (x) );
+  return x;
+}
+
 // flush the TLB.
 static inline void
 sfence_vma()
