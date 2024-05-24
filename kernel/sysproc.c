@@ -97,3 +97,21 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_sigalarm(void){
+  int interval;
+  uint64 handler;
+  //转换参数
+  if(argint(0, &interval) < 0)
+    return -1;
+  if(argaddr(1, &handler) < 0)
+    return -1;
+
+  return sigalarm(interval,(void(*)())(handler));
+}
+
+uint64
+sys_sigreturn(void){
+  return sigreturn();
+}

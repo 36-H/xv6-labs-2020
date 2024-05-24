@@ -36,36 +36,46 @@ trapinithart(void)
 void
 usertrap(void)
 {
+  // 设备中断类型
   int which_dev = 0;
-
+  // 检查是否是从用户模式进入的中断
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
 
   // send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
+  // 设置中断向量表为内核的中断处理程序
   w_stvec((uint64)kernelvec);
-
+  // 获取当前进程
   struct proc *p = myproc();
   
   // save user program counter.
+  // 保存用户程序计数器（程序的当前执行地址）
   p->trapframe->epc = r_sepc();
-  
+  //scause： RISC-V在这里放置一个描述陷阱原因的数字。
   if(r_scause() == 8){
     // system call
-
+    // 处理系统调用
     if(p->killed)
       exit(-1);
 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
+    // 将sepc指针指向下一条指令，跳过ecall指令
+    // sepc：当发生陷阱时，RISC-V会在这里保存程序计数器pc（因为pc会被stvec覆盖）。
+    // sret（从陷阱返回）指令会将sepc复制到pc。
+    // 内核可以写入sepc来控制sret的去向。
     p->trapframe->epc += 4;
 
     // an interrupt will change sstatus &c registers,
     // so don't enable until done with those registers.
+    // 打开中断
     intr_on();
-
+    // 调用系统调用处理程序
     syscall();
   } else if((which_dev = devintr()) != 0){
+    //这里是在检查trap类型 如果不是设备中断，那么就是异常中断，
+    //内核异常则为致命的error，所以跳至else代码块
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
@@ -77,8 +87,33 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  // 用户中断
+  if(which_dev == 2){
+    //判断是否设置了时钟事件
+    if(p->alarm_ticks != 0 ){
+      // printf("设置了时钟事件 %d",p->alarm_ticks);
+      p->ticks++;
+      // printf("ticks = %d", p->ticks);
+      //判断是否到达了足够的ticks
+      if(p->ticks >= p->alarm_ticks){
+        //判断是否在处理上一个回调
+        if(!p->handlingalarm){
+          p->handlingalarm = 1;
+
+          //保存当前的trapframe；
+          *p->alarm_trapframe = *p->trapframe;
+
+          //加载回调
+          p->trapframe->epc = (uint64)p->alarm_handler;
+
+          //重置ticks
+          p->ticks = 0;
+        }
+      }
+    }
     yield();
+  }
+    
 
   usertrapret();
 }
@@ -218,3 +253,20 @@ devintr()
   }
 }
 
+// trap.c
+int sigalarm(int ticks, void(*handler)()) {
+  // 设置 myproc 中的相关属性
+  struct proc *p = myproc();
+  p->alarm_ticks = ticks;
+  p->alarm_handler = handler;
+  p->ticks = 0;
+  return 0;
+}
+
+int sigreturn() {
+  // 将 trapframe 恢复到时钟中断之前的状态，恢复原本正在执行的程序流
+  struct proc *p = myproc();
+  *p->trapframe = *p->alarm_trapframe;
+  p->handlingalarm = 0;
+  return 0;
+}

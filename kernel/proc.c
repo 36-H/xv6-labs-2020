@@ -120,6 +120,18 @@ found:
     release(&p->lock);
     return 0;
   }
+  
+  //初始化alarm的关联参数
+  if((p->alarm_trapframe = (struct trapframe *)kalloc()) == 0){
+    release(&p->lock);
+    return 0;
+  }
+
+  
+  p->alarm_ticks = 0;
+  p->ticks = 0;
+  p->alarm_handler = 0;
+  p->handlingalarm = 0;
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -149,6 +161,16 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+
+  //清除alarm的关联参数
+  if(p->alarm_trapframe)
+    kfree((void*)p->alarm_trapframe);
+  p->alarm_trapframe = 0;
+  p->alarm_ticks = 0;
+  p->ticks = 0;
+  p->alarm_handler = 0;
+  p->handlingalarm = 0;
+
   p->state = UNUSED;
 }
 
