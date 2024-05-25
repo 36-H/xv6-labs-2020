@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -181,9 +183,11 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+      // panic("uvmunmap: walk");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+      // panic("uvmunmap: not mapped");
+      continue;
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -299,6 +303,35 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
+//懒分配内存
+void
+uvmlazyalloc(uint64 va){
+  struct proc *p = myproc();
+  char *mem = kalloc();
+  if(mem == 0){
+    printf("lazy alloc error: out of memory\n");
+    p->killed = 1;
+    return;
+  }
+  memset(mem, 0, PGSIZE);
+  //开始映射内存 将虚拟地址 va 所在页面的起始地址映射到物理内存地址 mem，
+  //并设置页面权限为可写、可执行、可读和用户模式访问
+  if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+    printf("lazy alloc error: failed to map page\n");
+    kfree(mem);
+    p->killed = 1;
+  }
+}
+
+int
+uvmshouldbealloc(uint64 va){
+  pte_t *pte;
+  struct proc *p = myproc();
+  return (va < p->sz //缺失映射的地址是否小于进程申请的地址
+      && PGROUNDDOWN(va) != r_sp() //地址不应该是guard page
+      && (((pte = walk(p->pagetable, va, 0))==0) || ((*pte & PTE_V)==0))); //判断页表项是否有效
+}
+
 // Given a parent process's page table, copy
 // its memory into a child's page table.
 // Copies both the page table and the
@@ -315,9 +348,11 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      // panic("uvmcopy: pte should exist");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      // panic("uvmcopy: page not present");
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -356,6 +391,10 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
+  if(uvmshouldbealloc(dstva)){
+    uvmlazyalloc(dstva);
+  }
+
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
@@ -380,6 +419,10 @@ int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
   uint64 n, va0, pa0;
+
+  if(uvmshouldbealloc(srcva)){
+    uvmlazyalloc(srcva);
+  }
 
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
